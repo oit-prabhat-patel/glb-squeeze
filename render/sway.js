@@ -22,7 +22,8 @@ if (!modelArg || !outArg) {
 }
 
 const DEFAULTS = {frames: 30, fps: 15, amp: 14, yaw: 0, anchorX: 0.72, anchorY: 0.46,
-                  fill: 0.78, w: 720, h: 432, q: 72, glowR: 0.78, glowA: 0.73};
+                  fill: 0.78, fillW: 0.52, w: 720, h: 432, q: 72,
+                  glowR: 0.78, glowA: 0.73};
 const opt = {...DEFAULTS};
 
 // Validate rather than silently ignore. A shell that doesn't word-split (zsh
@@ -75,7 +76,7 @@ try {
 
   const qs = new URLSearchParams({
     model: '/model.glb', w: opt.w, h: opt.h,
-    amp: opt.amp, yaw: opt.yaw, anchorX: opt.anchorX, anchorY: opt.anchorY, fill: opt.fill,
+    amp: opt.amp, yaw: opt.yaw, anchorX: opt.anchorX, anchorY: opt.anchorY, fill: opt.fill, fillW: opt.fillW,
     glowR: opt.glowR, glowA: opt.glowA,
   });
   await page.goto(`${base}/scene.html?${qs}`, {waitUntil: 'networkidle0', timeout: 60000});

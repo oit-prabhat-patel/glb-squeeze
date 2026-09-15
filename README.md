@@ -74,16 +74,60 @@ node render/sway.js model.glb out.webp --amp 14 --anchorX 0.72
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--frames` / `--fps` | `30` / `15` | Loop length. 30 @ 15 = a 2s loop. |
+| `--frames` / `--fps` | `30` / `15` | Sampling / playback rate. 30 @ 15 = a 2s loop. |
 | `--amp` | `14` | Sway half-angle in degrees. |
+| `--yaw` | `0` | Base facing correction in degrees, applied before the sway. |
 | `--anchorX` / `--anchorY` | `0.72` / `0.46` | Where the subject sits in frame (0–1). |
-| `--fill` | `0.78` | Subject height as a fraction of canvas height. |
+| `--fill` | `0.78` | Max subject height as a fraction of canvas height. |
+| `--fillW` | `0.52` | Max subject width as a fraction of canvas width. |
+| `--glowR` / `--glowA` | `0.78` / `0.73` | Backdrop halo radius and opacity. |
 | `--w` / `--h` | `720` / `432` | Output size. |
 | `--q` | `72` | WebP quality. |
 
+Unknown flags, non-numeric values and odd argument counts are rejected rather
+than ignored. If you pass flags via a shell variable, **quote it** — zsh does
+not word-split unquoted expansions, so `$FLAGS` arrives as a single argument.
+
 The sway is `sin(2π·phase)`, so the last frame meets the first exactly and the
-loop has no visible seam. A `-still.png` is written next to the output for
-checking framing without decoding the animation.
+loop has no visible seam. A `-still.png` is written next to the output — the
+**neutral** frame, not a mid-sway one, since a sine spends its extremes turned
+and a peak frame makes a correctly-centred subject look crooked.
+
+Frame count and playback rate are independent levers worth understanding:
+`--frames` sets how finely one sine period is sampled and therefore the file
+size; `--fps` only sets how fast those frames play. **Halving the speed is
+free** — drop `--fps`. Adding frames is what costs bytes, and you only need
+them if the slower playback starts to judder.
+
+### Finding each model's facing
+
+Exported GLBs face arbitrary directions, so `--yaw` squares a model up before
+the sway is applied. `contact.js` renders every model at eight facings — one
+strip per model, loading each model once rather than relaunching per angle:
+
+```bash
+node render/contact.js ./facings model-a.glb model-b.glb
+```
+
+Pick the front-on column by eye, then put that angle in the batch config.
+
+### Batch rendering
+
+```bash
+node render/batch.js render/deities.json ./out              # full render
+node render/batch.js render/deities.json ./out --frames 2   # fast framing preview
+node render/batch.js render/deities.json ./out --modelDir ~/models
+```
+
+The config carries defaults plus per-model overrides. Those overrides are not
+optional polish — subjects in one set can range from a narrow standing figure
+to a chariot-and-horses to a squat shrine, and a single `fill` either crops the
+tall ones through the body or renders the wide ones tiny. The `--frames 2`
+preview exists to catch exactly that before paying for full renders.
+
+Framing fits inside **both** `--fill` (max height) and `--fillW` (max width),
+whichever binds, measured *after* the yaw correction — so a wide subject shrinks
+to stay clear of the card's text instead of sprawling across it.
 
 **Why WebP rather than GIF:** GIF caps at 256 colors, which bands badly across
 the gold and skin gradients on a rendered murti, and it can't do partial-frame

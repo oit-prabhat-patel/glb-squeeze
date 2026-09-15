@@ -25,7 +25,8 @@ const CFG = {
   yaw:     +(q.get('yaw')    ?? 0)  * Math.PI/180,  // base facing correction
   anchorX: +(q.get('anchorX')?? 0.72),              // 0=left, .5=centre, 1=right
   anchorY: +(q.get('anchorY')?? 0.46),              // 0=top, .5=centre, 1=bottom
-  fill:    +(q.get('fill')   ?? 0.86),              // model height / canvas height
+  fill:    +(q.get('fill')   ?? 0.86),              // max height / canvas height
+  fillW:   +(q.get('fillW')  ?? 0.52),              // max width  / canvas width
   bgTop:    q.get('bgTop')   ?? '#2C6E6B',
   bgBottom: q.get('bgBottom')?? '#12333A',
   glow:     q.get('glow')    ?? '#EE9322',
@@ -97,19 +98,26 @@ const draco = new DRACOLoader().setDecoderPath(
 new GLTFLoader().setDRACOLoader(draco).load(CFG.model, (gltf)=>{
   const model = gltf.scene;
 
+  yawGrp.add(model);
+  // Measure AFTER the facing correction: these subjects range from narrow
+  // standing figures to a chariot-and-horses, and a rotated wide subject
+  // presents a different width than its authored bounding box.
+  yawGrp.updateMatrixWorld(true);
   const box  = new THREE.Box3().setFromObject(model);
   const size = box.getSize(new THREE.Vector3());
   const mid  = box.getCenter(new THREE.Vector3());
-  model.position.sub(mid);
-  yawGrp.add(model);
+  yawGrp.position.sub(mid);
 
-  // Frame so the murti fills CFG.fill of the canvas height, then convert the
-  // fractional anchor into world units at the subject's depth.
-  const dist = (size.y / CFG.fill) / (2*Math.tan(camera.fov*Math.PI/360));
+  // Fit inside BOTH limits and take whichever binds, so a wide subject shrinks
+  // to stay out of the text rather than sprawling across the card.
+  const tanHalf = Math.tan(camera.fov*Math.PI/360);
+  const distH = (size.y / CFG.fill)  / (2*tanHalf);
+  const distW = (size.x / CFG.fillW) / (2*tanHalf*camera.aspect);
+  const dist  = Math.max(distH, distW);
   camera.position.set(0, 0, dist);
   camera.lookAt(0, 0, 0);
 
-  const visH = 2*Math.tan(camera.fov*Math.PI/360)*dist;
+  const visH = 2*tanHalf*dist;
   offset.position.x = (CFG.anchorX - 0.5) * visH * camera.aspect;
   offset.position.y = (0.5 - CFG.anchorY) * visH;
 
@@ -117,6 +125,8 @@ new GLTFLoader().setDRACOLoader(draco).load(CFG.model, (gltf)=>{
     pivot.rotation.y = CFG.amp * Math.sin(phase * Math.PI * 2);
     renderer.render(scene, camera);
   };
+  // Lets a driver sweep facings without paying the model load again.
+  window.__setYaw = (deg) => { yawGrp.rotation.y = deg * Math.PI/180; };
   window.__frame(0);
   window.__ready = true;
 }, undefined, (e)=>{ window.__error = String(e); });

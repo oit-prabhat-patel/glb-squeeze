@@ -1,0 +1,34 @@
+{
+  "_comment": "Example batch config. Copy, point modelDir at your models, and list them. Run with --frames 2 first to check framing cheaply before full renders.",
+
+  "modelDir": "~/models",
+
+  "defaults": {
+    "frames": 40,
+    "fps": 10,
+    "amp": 6,
+    "yaw": 0,
+    "anchorX": 0.7,
+    "anchorY": 0.56,
+    "fill": 0.95,
+    "fillW": 0.52,
+    "w": 720,
+    "h": 432,
+    "q": 62,
+    "glowR": 1.05,
+    "glowA": 0.95
+  },
+
+  "models": [
+    {"file": "seated-figure.glb", "name": "seated-figure"},
+
+    {"_why": "Tall subject — the default fill crops it through the body, so give it less height and centre it.",
+     "file": "standing-figure.glb", "name": "standing-figure", "fill": 0.86, "anchorY": 0.5},
+
+    {"_why": "Wide and short — the width limit binds hard and renders it tiny, so let it use more width.",
+     "file": "wide-object.glb", "name": "wide-object", "fillW": 0.62, "anchorY": 0.44},
+
+    {"_why": "Exported facing a different direction than the rest of the set. Find this with contact.js.",
+     "file": "rotated-export.glb", "name": "rotated-export", "yaw": -90}
+  ]
+}

@@ -4,3 +4,6 @@ node_modules/
 *.log
 squeeze-report.csv
 .DS_Store
+
+# Project-specific batch configs (keep asset lineups out of the public repo)
+render/deities.json
