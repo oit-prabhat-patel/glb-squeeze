@@ -2,8 +2,10 @@
   "name": "glb-squeeze",
   "version": "1.0.0",
   "description": "Batch-compress GLB/glTF models for mobile and web delivery",
+  "type": "module",
   "scripts": {
-    "squeeze": "./squeeze.sh"
+    "squeeze": "./squeeze.sh",
+    "sway": "node render/sway.js"
   },
   "keywords": [
     "glb",
@@ -16,6 +18,7 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@gltf-transform/cli": "4.5.0"
+    "@gltf-transform/cli": "4.5.0",
+    "puppeteer": "25.10.0"
   }
 }

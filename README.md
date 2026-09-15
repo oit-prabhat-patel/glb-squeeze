@@ -63,6 +63,37 @@ committing to a ratio — decimation artifacts show up on silhouettes and
 thin features (flame tips, jewellery, petal edges) long before they show up
 on flat surfaces.
 
+## Rendering a looping sway animation
+
+`render/sway.js` turns a model into a seamlessly looping animated WebP — the
+murti rotating gently left and right — sized for a UI card.
+
+```bash
+node render/sway.js model.glb out.webp --amp 14 --anchorX 0.72
+```
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--frames` / `--fps` | `30` / `15` | Loop length. 30 @ 15 = a 2s loop. |
+| `--amp` | `14` | Sway half-angle in degrees. |
+| `--anchorX` / `--anchorY` | `0.72` / `0.46` | Where the subject sits in frame (0–1). |
+| `--fill` | `0.78` | Subject height as a fraction of canvas height. |
+| `--w` / `--h` | `720` / `432` | Output size. |
+| `--q` | `72` | WebP quality. |
+
+The sway is `sin(2π·phase)`, so the last frame meets the first exactly and the
+loop has no visible seam. A `-still.png` is written next to the output for
+checking framing without decoding the animation.
+
+**Why WebP rather than GIF:** GIF caps at 256 colors, which bands badly across
+the gold and skin gradients on a rendered murti, and it can't do partial-frame
+updates well. Animated WebP keeps 24-bit color and re-encodes only the
+rectangle that actually changed — with a static backdrop and a moving subject,
+that means the background is stored once and each frame costs ~16 KB instead of
+a full re-encode. A 2s loop at 720×432 lands around 450 KB.
+
+Requires `img2webp` (`brew install webp`).
+
 ## Why this works
 
 The instinct carried over from images — "compress the textures" — is usually

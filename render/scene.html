@@ -1,0 +1,114 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>sway</title>
+<style>html,body{margin:0;background:#000;overflow:hidden}canvas{display:block}</style>
+</head>
+<body>
+<script type="importmap">
+{"imports":{
+  "three":"https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {DRACOLoader} from 'three/addons/loaders/DRACOLoader.js';
+import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
+
+const q = new URLSearchParams(location.search);
+const CFG = {
+  model:   q.get('model'),
+  w:       +(q.get('w')      ?? 900),
+  h:       +(q.get('h')      ?? 540),
+  amp:     +(q.get('amp')    ?? 14) * Math.PI/180,  // sway half-angle
+  anchorX: +(q.get('anchorX')?? 0.72),              // 0=left, .5=centre, 1=right
+  anchorY: +(q.get('anchorY')?? 0.46),              // 0=top, .5=centre, 1=bottom
+  fill:    +(q.get('fill')   ?? 0.86),              // model height / canvas height
+  bgTop:    q.get('bgTop')   ?? '#2C6E6B',
+  bgBottom: q.get('bgBottom')?? '#12333A',
+  glow:     q.get('glow')    ?? '#EE9322',
+};
+
+const renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
+renderer.setPixelRatio(1);
+renderer.setSize(CFG.w, CFG.h);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+
+// Backdrop painted to a canvas texture: a warm glow behind where the murti
+// sits, falling off into the brand teal that the card's own bottom gradient
+// continues into.
+function backdrop(){
+  const c = document.createElement('canvas');
+  c.width = CFG.w; c.height = CFG.h;
+  const g = c.getContext('2d');
+  const lin = g.createLinearGradient(0, 0, 0, CFG.h);
+  lin.addColorStop(0, CFG.bgTop);
+  lin.addColorStop(1, CFG.bgBottom);
+  g.fillStyle = lin; g.fillRect(0, 0, CFG.w, CFG.h);
+  const rad = g.createRadialGradient(
+    CFG.w*CFG.anchorX, CFG.h*0.52, 0,
+    CFG.w*CFG.anchorX, CFG.h*0.52, CFG.h*0.78);
+  rad.addColorStop(0,   CFG.glow + 'BB');
+  rad.addColorStop(0.45,CFG.glow + '3A');
+  rad.addColorStop(1,   CFG.glow + '00');
+  g.fillStyle = rad; g.fillRect(0, 0, CFG.w, CFG.h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+scene.background = backdrop();
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x2a3f46, 1.5));
+const key = new THREE.DirectionalLight(0xfff0d8, 2.6); key.position.set(2,3.5,3);
+const rim = new THREE.DirectionalLight(0xEE9322, 1.6); rim.position.set(-3,1.5,-2.5);
+scene.add(key, rim);
+
+const camera = new THREE.PerspectiveCamera(32, CFG.w/CFG.h, 0.01, 200);
+
+// offset ← pivot ← model. The pivot spins about the murti's own axis; the
+// offset slides that whole assembly sideways so the sway never drifts the
+// subject out of its anchor.
+const offset = new THREE.Group();
+const pivot  = new THREE.Group();
+offset.add(pivot); scene.add(offset);
+
+const draco = new DRACOLoader().setDecoderPath(
+  'https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/');
+
+new GLTFLoader().setDRACOLoader(draco).load(CFG.model, (gltf)=>{
+  const model = gltf.scene;
+
+  const box  = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const mid  = box.getCenter(new THREE.Vector3());
+  model.position.sub(mid);
+  pivot.add(model);
+
+  // Frame so the murti fills CFG.fill of the canvas height, then convert the
+  // fractional anchor into world units at the subject's depth.
+  const dist = (size.y / CFG.fill) / (2*Math.tan(camera.fov*Math.PI/360));
+  camera.position.set(0, 0, dist);
+  camera.lookAt(0, 0, 0);
+
+  const visH = 2*Math.tan(camera.fov*Math.PI/360)*dist;
+  offset.position.x = (CFG.anchorX - 0.5) * visH * camera.aspect;
+  offset.position.y = (0.5 - CFG.anchorY) * visH;
+
+  window.__frame = (phase) => {                 // phase 0..1 over one loop
+    pivot.rotation.y = CFG.amp * Math.sin(phase * Math.PI * 2);
+    renderer.render(scene, camera);
+  };
+  window.__frame(0);
+  window.__ready = true;
+}, undefined, (e)=>{ window.__error = String(e); });
+</script>
+</body>
+</html>
