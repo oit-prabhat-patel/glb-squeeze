@@ -21,10 +21,28 @@ if (!modelArg || !outArg) {
   process.exit(1);
 }
 
-const opt = {frames: 30, fps: 15, amp: 14, yaw: 0, anchorX: 0.72, anchorY: 0.46,
-             fill: 0.78, w: 720, h: 432, q: 72, glowR: 0.78, glowA: 0.73};
+const DEFAULTS = {frames: 30, fps: 15, amp: 14, yaw: 0, anchorX: 0.72, anchorY: 0.46,
+                  fill: 0.78, w: 720, h: 432, q: 72, glowR: 0.78, glowA: 0.73};
+const opt = {...DEFAULTS};
+
+// Validate rather than silently ignore. A shell that doesn't word-split (zsh
+// expanding an unquoted "$FLAGS") delivers every flag as one argv element;
+// accepting that quietly renders defaults while reporting success, which makes
+// two runs look different when they are byte-identical.
+const die = (m) => { console.error(`sway: ${m}`); process.exit(1); };
+if (rest.length % 2) die(`each flag needs a value (got ${rest.length} extra args)`);
 for (let i = 0; i < rest.length; i += 2) {
-  opt[rest[i].replace(/^--/, '')] = isNaN(+rest[i+1]) ? rest[i+1] : +rest[i+1];
+  const flag = rest[i];
+  if (!flag.startsWith('--')) {
+    die(`expected a --flag, got "${flag}"` +
+        (flag.includes(' ') ? ' — looks like an unsplit shell variable' : ''));
+  }
+  const key = flag.slice(2);
+  if (!(key in DEFAULTS)) die(`unknown flag --${key}`);
+  const raw = rest[i + 1];
+  const num = Number(raw);
+  if (!Number.isFinite(num)) die(`--${key} needs a number, got "${raw}"`);
+  opt[key] = num;
 }
 
 const modelPath = path.resolve(modelArg);
