@@ -17,12 +17,12 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const [, , modelArg, outArg, ...rest] = process.argv;
 if (!modelArg || !outArg) {
   console.error('usage: sway.js <model.glb> <out.webp> [--frames 48] [--fps 20] ' +
-                '[--amp 14] [--anchorX 0.72] [--fill 0.86] [--w 900] [--h 540] [--q 82]');
+                '[--amp 14] [--yaw 0] [--anchorX 0.72] [--fill 0.86] [--w 900] [--h 540] [--q 82]');
   process.exit(1);
 }
 
-const opt = {frames: 30, fps: 15, amp: 14, anchorX: 0.72, anchorY: 0.46,
-             fill: 0.78, w: 720, h: 432, q: 72};
+const opt = {frames: 30, fps: 15, amp: 14, yaw: 0, anchorX: 0.72, anchorY: 0.46,
+             fill: 0.78, w: 720, h: 432, q: 72, glowR: 0.78, glowA: 0.73};
 for (let i = 0; i < rest.length; i += 2) {
   opt[rest[i].replace(/^--/, '')] = isNaN(+rest[i+1]) ? rest[i+1] : +rest[i+1];
 }
@@ -57,7 +57,8 @@ try {
 
   const qs = new URLSearchParams({
     model: '/model.glb', w: opt.w, h: opt.h,
-    amp: opt.amp, anchorX: opt.anchorX, anchorY: opt.anchorY, fill: opt.fill,
+    amp: opt.amp, yaw: opt.yaw, anchorX: opt.anchorX, anchorY: opt.anchorY, fill: opt.fill,
+    glowR: opt.glowR, glowA: opt.glowA,
   });
   await page.goto(`${base}/scene.html?${qs}`, {waitUntil: 'networkidle0', timeout: 60000});
   await page.waitForFunction('window.__ready === true || window.__error', {timeout: 90000});
@@ -88,9 +89,9 @@ try {
     ...files, '-o', outPath,
   ], {stdio: ['ignore', 'ignore', 'inherit']});
 
-  // Still of the mid-sway frame, for eyeballing framing without decoding webp.
-  fs.copyFileSync(files[Math.floor(files.length / 4)],
-                  outPath.replace(/\.webp$/, '-still.png'));
+  // Still of the NEUTRAL frame (phase 0, zero sway) — the pose to judge facing
+  // and framing against. A mid-sway frame reads as "turned" and misleads.
+  fs.copyFileSync(files[0], outPath.replace(/\.webp$/, '-still.png'));
 
   const kb = (fs.statSync(outPath).size / 1024).toFixed(0);
   console.log(`${outPath}  ${kb} KB  ${opt.frames}f @ ${opt.fps}fps ` +

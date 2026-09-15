@@ -22,13 +22,19 @@ const CFG = {
   w:       +(q.get('w')      ?? 900),
   h:       +(q.get('h')      ?? 540),
   amp:     +(q.get('amp')    ?? 14) * Math.PI/180,  // sway half-angle
+  yaw:     +(q.get('yaw')    ?? 0)  * Math.PI/180,  // base facing correction
   anchorX: +(q.get('anchorX')?? 0.72),              // 0=left, .5=centre, 1=right
   anchorY: +(q.get('anchorY')?? 0.46),              // 0=top, .5=centre, 1=bottom
   fill:    +(q.get('fill')   ?? 0.86),              // model height / canvas height
   bgTop:    q.get('bgTop')   ?? '#2C6E6B',
   bgBottom: q.get('bgBottom')?? '#12333A',
   glow:     q.get('glow')    ?? '#EE9322',
+  glowR:   +(q.get('glowR')  ?? 0.78),              // halo radius, x canvas height
+  glowA:   +(q.get('glowA')  ?? 0.73),              // halo centre opacity 0..1
 };
+
+const hexA = (a) => Math.round(Math.max(0, Math.min(1, a)) * 255)
+  .toString(16).padStart(2, '0');
 
 const renderer = new THREE.WebGLRenderer({antialias:true, preserveDrawingBuffer:true});
 renderer.setPixelRatio(1);
@@ -52,9 +58,9 @@ function backdrop(){
   g.fillStyle = lin; g.fillRect(0, 0, CFG.w, CFG.h);
   const rad = g.createRadialGradient(
     CFG.w*CFG.anchorX, CFG.h*0.52, 0,
-    CFG.w*CFG.anchorX, CFG.h*0.52, CFG.h*0.78);
-  rad.addColorStop(0,   CFG.glow + 'BB');
-  rad.addColorStop(0.45,CFG.glow + '3A');
+    CFG.w*CFG.anchorX, CFG.h*0.52, CFG.h*CFG.glowR);
+  rad.addColorStop(0,   CFG.glow + hexA(CFG.glowA));
+  rad.addColorStop(0.45,CFG.glow + hexA(CFG.glowA * 0.32));
   rad.addColorStop(1,   CFG.glow + '00');
   g.fillStyle = rad; g.fillRect(0, 0, CFG.w, CFG.h);
   const t = new THREE.CanvasTexture(c);
@@ -73,12 +79,17 @@ scene.add(key, rim);
 
 const camera = new THREE.PerspectiveCamera(32, CFG.w/CFG.h, 0.01, 200);
 
-// offset ← pivot ← model. The pivot spins about the murti's own axis; the
-// offset slides that whole assembly sideways so the sway never drifts the
+// offset ← pivot ← yaw ← model. The pivot spins about the murti's own axis;
+// `yaw` holds the per-model correction that squares an arbitrarily-oriented
+// GLB up to the camera, so the sway oscillates around front-on rather than
+// around whatever direction the asset happened to be exported facing. The
+// offset slides the whole assembly sideways so the sway never drifts the
 // subject out of its anchor.
 const offset = new THREE.Group();
 const pivot  = new THREE.Group();
-offset.add(pivot); scene.add(offset);
+const yawGrp = new THREE.Group();
+pivot.add(yawGrp); offset.add(pivot); scene.add(offset);
+yawGrp.rotation.y = CFG.yaw;
 
 const draco = new DRACOLoader().setDecoderPath(
   'https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/');
@@ -90,7 +101,7 @@ new GLTFLoader().setDRACOLoader(draco).load(CFG.model, (gltf)=>{
   const size = box.getSize(new THREE.Vector3());
   const mid  = box.getCenter(new THREE.Vector3());
   model.position.sub(mid);
-  pivot.add(model);
+  yawGrp.add(model);
 
   // Frame so the murti fills CFG.fill of the canvas height, then convert the
   // fractional anchor into world units at the subject's depth.
