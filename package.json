@@ -1,0 +1,21 @@
+{
+  "name": "glb-squeeze",
+  "version": "1.0.0",
+  "description": "Batch-compress GLB/glTF models for mobile and web delivery",
+  "scripts": {
+    "squeeze": "./squeeze.sh"
+  },
+  "keywords": [
+    "glb",
+    "gltf",
+    "draco",
+    "compression",
+    "3d",
+    "three.js",
+    "webgl"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@gltf-transform/cli": "4.5.0"
+  }
+}

@@ -1,0 +1,6 @@
+node_modules/
+*.glb
+*.gltf
+*.log
+squeeze-report.csv
+.DS_Store

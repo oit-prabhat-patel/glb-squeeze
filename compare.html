@@ -1,0 +1,126 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>glb-squeeze — before / after</title>
+<style>
+  html,body{margin:0;height:100%;background:#15181c;color:#c9d1d9;
+    font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;overflow:hidden}
+  #wrap{display:flex;height:100%}
+  .pane{flex:1;position:relative;border-right:1px solid #2a2f36}
+  .pane:last-child{border-right:0}
+  .tag{position:absolute;top:0;left:0;right:0;padding:8px 12px;z-index:2;
+    background:linear-gradient(#15181cdd,#15181c00);pointer-events:none}
+  .tag b{color:#e6edf3;font-weight:600}
+  .tag .sz{color:#7ee787}
+  canvas{display:block}
+</style>
+</head>
+<body>
+<div id="wrap"><div class="pane" id="A"></div><div class="pane" id="B"></div></div>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {DRACOLoader} from 'three/addons/loaders/DRACOLoader.js';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+
+const q = new URLSearchParams(location.search);
+const SRC = {A: q.get('a'), B: q.get('b')};
+
+const draco = new DRACOLoader().setDecoderPath(
+  'https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/');
+
+// One shared control target so both panes stay locked to the same camera —
+// otherwise you're comparing viewing angles, not models.
+const views = [];
+
+function makePane(id, url){
+  const host = document.getElementById(id);
+  const w = host.clientWidth, h = host.clientHeight;
+
+  const renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setPixelRatio(devicePixelRatio);
+  renderer.setSize(w, h);
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  host.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x15181c);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x334455, 2.2));
+  const key = new THREE.DirectionalLight(0xffffff, 2.4);
+  key.position.set(2, 4, 3); scene.add(key);
+  const rim = new THREE.DirectionalLight(0xffd9a0, 1.2);
+  rim.position.set(-3, 2, -2); scene.add(rim);
+
+  const camera = new THREE.PerspectiveCamera(35, w/h, 0.01, 100);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+
+  const tag = document.createElement('div');
+  tag.className = 'tag';
+  tag.innerHTML = `<b>${url.split('/').pop()}</b> <span class="sz">loading…</span>`;
+  host.appendChild(tag);
+
+  const v = {renderer, scene, camera, controls, host};
+  views.push(v);
+
+  fetch(url).then(r=>r.arrayBuffer()).then(buf=>{
+    const mb = (buf.byteLength/1048576).toFixed(2);
+    new GLTFLoader().setDRACOLoader(draco).parse(buf, '', gltf=>{
+      const root = gltf.scene;
+      const box = new THREE.Box3().setFromObject(root);
+      const size = box.getSize(new THREE.Vector3()).length();
+      const mid = box.getCenter(new THREE.Vector3());
+      root.position.sub(mid);
+      scene.add(root);
+
+      camera.position.set(0, size*0.08, size*0.85);
+      controls.target.set(0, 0, 0);
+      controls.update();
+
+      let tris = 0;
+      root.traverse(o=>{ if(o.isMesh) tris += o.geometry.index
+        ? o.geometry.index.count/3 : o.geometry.attributes.position.count/3; });
+      tag.innerHTML = `<b>${url.split('/').pop()}</b>
+        <span class="sz">${mb} MB · ${Math.round(tris).toLocaleString()} tris</span>`;
+      v.ready = true;
+    });
+  });
+  return v;
+}
+
+const a = makePane('A', SRC.A);
+const b = makePane('B', SRC.B);
+
+// Mirror camera A → B so the two panes never drift apart.
+a.controls.addEventListener('change', ()=>{
+  b.camera.position.copy(a.camera.position);
+  b.camera.quaternion.copy(a.camera.quaternion);
+});
+
+addEventListener('resize', ()=>{
+  for (const v of views){
+    const w = v.host.clientWidth, h = v.host.clientHeight;
+    v.camera.aspect = w/h; v.camera.updateProjectionMatrix(); v.renderer.setSize(w,h);
+  }
+});
+
+(function loop(){
+  requestAnimationFrame(loop);
+  a.controls.update();
+  b.camera.position.copy(a.camera.position);
+  b.camera.quaternion.copy(a.camera.quaternion);
+  for (const v of views) v.renderer.render(v.scene, v.camera);
+})();
+
+window.__ready = () => views.every(v=>v.ready);
+</script>
+</body>
+</html>
