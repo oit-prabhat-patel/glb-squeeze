@@ -23,7 +23,7 @@ if (!modelArg || !outArg) {
 
 const DEFAULTS = {frames: 30, fps: 15, amp: 14, yaw: 0, anchorX: 0.72, anchorY: 0.46,
                   fill: 0.78, fillW: 0.52, w: 720, h: 432, q: 72,
-                  glowR: 0.78, glowA: 0.73};
+                  glowR: 0.78, glowA: 0.73, keepFrames: 0};
 const opt = {...DEFAULTS};
 
 // Validate rather than silently ignore. A shell that doesn't word-split (zsh
@@ -76,8 +76,8 @@ try {
 
   const qs = new URLSearchParams({
     model: '/model.glb', w: opt.w, h: opt.h,
-    amp: opt.amp, yaw: opt.yaw, anchorX: opt.anchorX, anchorY: opt.anchorY, fill: opt.fill, fillW: opt.fillW,
-    glowR: opt.glowR, glowA: opt.glowA,
+    amp: opt.amp, yaw: opt.yaw, anchorX: opt.anchorX, anchorY: opt.anchorY,
+    fill: opt.fill, fillW: opt.fillW, glowR: opt.glowR, glowA: opt.glowA,
   });
   await page.goto(`${base}/scene.html?${qs}`, {waitUntil: 'networkidle0', timeout: 60000});
   await page.waitForFunction('window.__ready === true || window.__error', {timeout: 90000});
@@ -101,9 +101,16 @@ try {
 
   fs.mkdirSync(path.dirname(outPath), {recursive: true});
   // img2webp defaults to lossless, which costs ~20x here for no visible gain
-  // on a rendered gradient backdrop.
+  // on a rendered gradient backdrop. -min_size buys a further ~2% at the same
+  // quality. File-level flags must precede the per-frame ones.
+  //
+  // Measured and rejected: -kmin 0 -kmax 0. Disabling keyframes changed
+  // nothing (957 KB either way) because the encoder was not inserting extra
+  // keyframes here to begin with. Size is dominated by how many pixels
+  // actually move, so the only real levers are --q, --w/--h and --frames.
   execFileSync('img2webp', [
-    '-loop', '0', '-d', String(Math.round(1000 / opt.fps)),
+    '-loop', '0', '-min_size',
+    '-d', String(Math.round(1000 / opt.fps)),
     '-lossy', '-q', String(opt.q), '-m', '6',
     ...files, '-o', outPath,
   ], {stdio: ['ignore', 'ignore', 'inherit']});
@@ -115,6 +122,12 @@ try {
   const kb = (fs.statSync(outPath).size / 1024).toFixed(0);
   console.log(`${outPath}  ${kb} KB  ${opt.frames}f @ ${opt.fps}fps ` +
               `(${(opt.frames / opt.fps).toFixed(1)}s loop)`);
+  if (opt.keepFrames) {
+    const keep = outPath.replace(/\.webp$/, '-frames');
+    fs.rmSync(keep, {recursive: true, force: true});
+    fs.cpSync(tmp, keep, {recursive: true});
+    console.log(`frames kept: ${keep}`);
+  }
 } finally {
   await browser.close();
   server.close();
