@@ -67,9 +67,12 @@ find "$IN_DIR" -maxdepth 1 -type f \( -iname '*.glb' -o -iname '*.gltf' \) -prin
   | xargs -0 -P "$JOBS" -I{} "$HERE/squeeze.sh" --worker {} "$OUT_DIR" "$RES_DIR"
 
 echo
-REPORT="$OUT_DIR/squeeze-report.csv"
+# Logs go in a subfolder so the output dir stays a clean, shippable set of models.
+LOG_DIR="$OUT_DIR/_squeeze"
+mkdir -p "$LOG_DIR"
+REPORT="$LOG_DIR/squeeze-report.csv"
 { echo "file,bytes_before,bytes_after,status"; cat "$RES_DIR"/*.csv 2>/dev/null | sort; } >"$REPORT"
-cp "$RES_DIR"/*.log "$OUT_DIR/" 2>/dev/null || true
+cp "$RES_DIR"/*.log "$LOG_DIR/" 2>/dev/null || true
 
 awk -F, 'NR>1 && $4=="ok" {b+=$2; a+=$3; n++} NR>1 && $4!="ok" {f++} END {
   printf "─────────────────────────────────────────────\n"

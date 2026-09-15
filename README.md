@@ -23,7 +23,8 @@ npm install
 ```
 
 Originals are never modified — outputs are written to the target folder under
-the same filenames, plus a `squeeze-report.csv` with before/after bytes.
+the same filenames, plus a `_squeeze/` folder holding per-file logs and a `squeeze-report.csv`
+with before/after bytes.
 
 ## Tuning
 
