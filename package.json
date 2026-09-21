@@ -4,7 +4,12 @@
   "description": "Batch-compress GLB/glTF models for mobile and web delivery",
   "type": "module",
   "scripts": {
-    "squeeze": "./squeeze.sh",
+    "ui": "node server.js",
+    "squeeze:hero": "node squeeze-cli.js --preset hero",
+    "squeeze:prop": "node squeeze-cli.js --preset prop",
+    "squeeze:decor": "node squeeze-cli.js --preset decor",
+    "squeeze:particle": "node squeeze-cli.js --preset particle",
+    "squeeze:raw": "./squeeze.sh",
     "sway": "node render/sway.js"
   },
   "keywords": [

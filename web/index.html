@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>glb-squeeze — drop &amp; preview</title>
+<style>
+  :root{
+    --bg:#15181c; --panel:#1b1f24; --line:#2a2f36; --line-2:#363c44;
+    --text:#c9d1d9; --dim:#7d8590; --white:#e6edf3;
+    --after:#7ee787; --before:#ffa657; --accent:#79c0ff; --bad:#ff7b72;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;min-height:100%}
+  body{background:var(--bg);color:var(--text);font:13px/1.55 var(--mono);}
+  a{color:var(--accent)}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 20px 60px}
+
+  header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:14px}
+  header h1{font-size:17px;color:var(--white);margin:0;font-weight:600;letter-spacing:.02em}
+  header h1 b{color:var(--after)}
+  header .tag{color:var(--dim)}
+  header .spacer{flex:1}
+  header .hint{color:var(--dim);font-size:12px}
+
+  /* preset picker */
+  .presets{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 6px}
+  .preset{flex:1 1 190px;min-width:170px;background:var(--panel);border:1px solid var(--line);
+    border-radius:9px;padding:11px 12px;cursor:pointer;transition:border-color .12s,background .12s}
+  .preset:hover{border-color:var(--line-2)}
+  .preset.on{border-color:var(--after);background:#19241b}
+  .preset .name{color:var(--white);font-weight:600;text-transform:uppercase;letter-spacing:.06em;font-size:12px;display:flex;justify-content:space-between;align-items:center}
+  .preset.on .name{color:var(--after)}
+  .preset .budget{color:var(--dim);font-size:11px}
+  .preset .blurb{color:var(--dim);font-size:11.5px;line-height:1.45;margin-top:5px}
+  .radio{width:11px;height:11px;border-radius:50%;border:1px solid var(--line-2);flex:none}
+  .preset.on .radio{background:var(--after);border-color:var(--after)}
+
+  /* drop zone */
+  .drop{margin-top:14px;border:1.5px dashed var(--line-2);border-radius:12px;padding:30px 20px;text-align:center;
+    background:var(--panel);cursor:pointer;transition:border-color .12s,background .12s}
+  .drop:hover{border-color:var(--dim)}
+  .drop.hot{border-color:var(--after);background:#19241b}
+  .drop .big{color:var(--white);font-size:15px}
+  .drop .small{color:var(--dim);font-size:12px;margin-top:6px}
+  .drop input{display:none}
+
+  /* results table */
+  .results{margin-top:18px;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .results .empty{padding:20px;text-align:center;color:var(--dim)}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--dim);font-weight:600;text-transform:uppercase;letter-spacing:.05em;font-size:10.5px;background:#171b20}
+  tr:last-child td{border-bottom:0}
+  tr.sel td{background:#19241b}
+  td .nm{color:var(--white);max-width:220px;overflow:hidden;text-overflow:ellipsis;display:inline-block;vertical-align:bottom}
+  .b{color:var(--before)} .a{color:var(--after)} .x{color:var(--white);font-weight:600}
+  .arrow{color:var(--dim);padding:0 4px}
+  td.num{text-align:right;font-variant-numeric:tabular-nums}
+  .st{font-size:10.5px;padding:2px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.04em}
+  .st.work{background:#20262d;color:var(--dim)} .st.ok{background:#19311e;color:var(--after)}
+  .st.err{background:#3a1d1b;color:var(--bad)}
+  .btn{background:transparent;border:1px solid var(--line-2);color:var(--text);font:inherit;font-size:11.5px;
+    padding:4px 9px;border-radius:6px;cursor:pointer}
+  .btn:hover{border-color:var(--dim);color:var(--white)}
+  .btn:disabled{opacity:.4;cursor:default}
+  td.act{display:flex;gap:6px;justify-content:flex-end}
+
+  /* compare viewer */
+  .viewer{margin-top:18px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#0f1216}
+  .viewer .vh{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--line);background:#171b20;color:var(--dim)}
+  .viewer .vh b{color:var(--white)}
+  .viewer .vh .spacer{flex:1}
+  #panes{display:flex;height:440px}
+  #panes .pane{flex:1;position:relative;border-right:1px solid var(--line);min-width:0}
+  #panes .pane:last-child{border-right:0}
+  #panes .ptag{position:absolute;top:0;left:0;right:0;padding:7px 11px;z-index:2;pointer-events:none;
+    background:linear-gradient(#0f1216dd,#0f121600);font-size:12px}
+  #panes .ptag .k{text-transform:uppercase;letter-spacing:.06em;font-size:10px}
+  #panes .ptag.o .k{color:var(--before)} #panes .ptag.s .k{color:var(--after)}
+  #panes .ptag .v{color:var(--white)}
+  #panes canvas{display:block}
+  .viewer .idle{display:grid;place-items:center;height:440px;color:var(--dim);text-align:center;padding:20px}
+
+  footer{margin-top:24px;color:var(--dim);font-size:11.5px;line-height:1.6}
+  footer code{color:var(--text);background:var(--panel);border:1px solid var(--line);padding:1px 5px;border-radius:4px}
+  @media (max-width:640px){#panes{height:340px}.viewer .idle{height:340px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><b>glb-squeeze</b> · drop &amp; preview</h1>
+    <span class="tag">local · 127.0.0.1</span>
+    <span class="spacer"></span>
+    <span class="hint">bulk folders? <code style="font-size:11px">npm run squeeze:prop -- ./in ./out</code></span>
+  </header>
+
+  <div class="presets" id="presets" role="radiogroup" aria-label="Model role preset"></div>
+
+  <label class="drop" id="drop">
+    <div class="big">Drop <b style="color:var(--white)">.glb</b> models here</div>
+    <div class="small">or click to browse — drop as many as you like; each is squeezed to the selected role</div>
+    <input type="file" id="file" accept=".glb,.gltf,model/gltf-binary" multiple>
+  </label>
+
+  <div class="results" id="results">
+    <div class="empty" id="empty">No models yet. Pick a role above, then drop files.</div>
+    <table id="table" hidden>
+      <thead><tr>
+        <th>Model</th><th class="num">Triangles</th><th class="num">Size</th><th class="num">Saved</th>
+        <th>Status</th><th style="text-align:right">&nbsp;</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <div class="viewer">
+    <div class="vh"><span>Preview</span><b id="vName">—</b><span class="spacer"></span>
+      <span class="hint" style="color:var(--dim)">drag to orbit · cameras locked</span></div>
+    <div class="idle" id="vIdle">Squeeze a model, then hit <b style="color:var(--text);margin:0 4px">Preview</b> to compare original vs optimized here.</div>
+    <div id="panes" hidden>
+      <div class="pane" id="paneO"><div class="ptag o"><span class="k">Original</span> <span class="v" id="tagO">—</span></div></div>
+      <div class="pane" id="paneS"><div class="ptag s"><span class="k">Squeezed</span> <span class="v" id="tagS">—</span></div></div>
+    </div>
+  </div>
+
+  <footer>
+    <p>Each file is sent to the local server, squeezed to the selected role's budget with the same Draco + WebP + simplify pipeline as the CLI, and returned with before/after stats. The role sets an <b>absolute</b> target, so mixed inputs converge to one consistent, performance-optimized output — the simplify <em>error</em> is a quality floor, so a detail-critical model keeps what it needs rather than being cut to the number.</p>
+  </footer>
+</div>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {DRACOLoader} from 'three/addons/loaders/DRACOLoader.js';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+
+const $ = (id) => document.getElementById(id);
+const mb = (b) => (b/1048576).toFixed(2);
+const nfmt = (x) => Math.round(x).toLocaleString();
+
+/* ---------- preset picker ---------- */
+let PRESETS = {}, current = 'prop';
+const order = ['hero','prop','decor','particle'];
+try {
+  PRESETS = await (await fetch('/presets')).json();
+} catch { PRESETS = {prop:{targetTris:12000,texSize:1024,blurb:'server offline?'}}; }
+function renderPresets(){
+  const host = $('presets'); host.innerHTML = '';
+  const names = order.filter(n=>PRESETS[n]).concat(Object.keys(PRESETS).filter(n=>!order.includes(n)));
+  if(!PRESETS[current]) current = names[0];
+  for(const n of names){
+    const p = PRESETS[n];
+    const el = document.createElement('div');
+    el.className = 'preset' + (n===current?' on':'');
+    el.setAttribute('role','radio'); el.setAttribute('aria-checked', n===current);
+    el.tabIndex = 0;
+    el.innerHTML = `<div class="name">${n}<span class="radio"></span></div>
+      <div class="budget">&le; ${nfmt(p.targetTris)} tris · ${p.texSize}px</div>
+      <div class="blurb">${p.blurb||''}</div>`;
+    const pick = ()=>{ current = n; renderPresets(); };
+    el.addEventListener('click', pick);
+    el.addEventListener('keydown', (e)=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); pick(); }});
+    host.appendChild(el);
+  }
+}
+renderPresets();
+
+/* ---------- squeeze queue ---------- */
+const items = [];           // {id,name,origBuf,sqBuf,stats,row,status}
+let queue = Promise.resolve();
+let selId = null;
+
+function addFiles(fileList){
+  for(const f of fileList){
+    if(!/\.(glb|gltf)$/i.test(f.name)) continue;
+    const id = 'i'+Math.random().toString(36).slice(2,8);
+    const it = {id, name:f.name, file:f, status:'queued'};
+    items.push(it);
+    addRow(it);
+    queue = queue.then(()=>runOne(it));   // sequential: clear progress, no CLI thrash
+  }
+  refreshTable();
+}
+
+async function runOne(it){
+  setStatus(it,'work','squeezing');
+  try{
+    it.origBuf = await it.file.arrayBuffer();
+    const res = await fetch(`/squeeze?preset=${encodeURIComponent(current)}&name=${encodeURIComponent(it.name)}`,
+      {method:'POST', headers:{'content-type':'application/octet-stream'}, body:it.origBuf});
+    if(!res.ok) throw new Error(await res.text());
+    it.sqBuf = await res.arrayBuffer();
+    const s = res.headers.get('x-stats');
+    it.stats = s ? JSON.parse(atob(s)) : null;
+    it.preset = it.stats?.preset || current;
+    setStatus(it,'ok','done');
+    fillRow(it);
+    if(!selId) select(it.id);         // auto-preview the first finished one
+  }catch(e){
+    it.error = String(e.message||e).split('\n')[0];
+    setStatus(it,'err','failed');
+    fillRow(it);
+  }
+}
+
+/* ---------- results table ---------- */
+function refreshTable(){
+  const has = items.length>0;
+  $('empty').hidden = has; $('table').hidden = !has;
+}
+function addRow(it){
+  const tr = document.createElement('tr'); tr.id = 'row-'+it.id;
+  tr.innerHTML = `<td><span class="nm" title="${it.name}">${it.name}</span></td>
+    <td class="num tris">—</td><td class="num size">—</td><td class="num saved">—</td>
+    <td><span class="st work">queued</span></td>
+    <td class="act"><button class="btn prev" disabled>Preview</button><button class="btn dl" disabled>Download</button></td>`;
+  $('rows').appendChild(tr);
+  it.row = tr;
+  tr.querySelector('.prev').addEventListener('click', ()=>select(it.id));
+  tr.querySelector('.dl').addEventListener('click', ()=>download(it));
+  tr.addEventListener('click', (e)=>{ if(!e.target.closest('button')) select(it.id); });
+}
+function setStatus(it, cls, text){
+  const st = it.row.querySelector('.st'); st.className = 'st '+cls; st.textContent = text;
+}
+function fillRow(it){
+  if(it.error){ it.row.querySelector('.tris').textContent='—'; it.row.querySelector('.size').innerHTML=`<span class="b" title="${it.error}">error</span>`; return; }
+  const s = it.stats; if(!s) return;
+  it.row.querySelector('.tris').innerHTML = `<span class="b">${nfmt(s.before.tris)}</span><span class="arrow">&rarr;</span><span class="a">${nfmt(s.after.tris)}</span>`;
+  it.row.querySelector('.size').innerHTML = `<span class="b">${mb(s.before.bytes)}</span><span class="arrow">&rarr;</span><span class="a">${mb(s.after.bytes)}</span>`;
+  const factor = s.before.bytes / Math.max(1, s.after.bytes);
+  it.row.querySelector('.saved').innerHTML = `<span class="x">${factor.toFixed(1)}&times;</span>`;
+  it.row.querySelector('.prev').disabled = false;
+  it.row.querySelector('.dl').disabled = false;
+}
+function download(it){
+  if(!it.sqBuf) return;
+  const blob = new Blob([it.sqBuf], {type:'model/gltf-binary'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = it.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+}
+
+/* ---------- drop / browse ---------- */
+const drop = $('drop'), fileInput = $('file');
+fileInput.addEventListener('change', ()=>{ addFiles(fileInput.files); fileInput.value=''; });
+['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev, e=>{ e.preventDefault(); drop.classList.add('hot'); }));
+['dragleave','drop'].forEach(ev=>drop.addEventListener(ev, e=>{ e.preventDefault(); if(ev!=='dragleave'||e.target===drop) drop.classList.remove('hot'); }));
+drop.addEventListener('drop', e=>{ if(e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files); });
+
+/* ---------- the compare viewer ---------- */
+const draco = new DRACOLoader().setDecoderPath('https://unpkg.com/three@0.160.0/examples/jsm/libs/draco/');
+const loader = new GLTFLoader().setDRACOLoader(draco);
+
+function makePane(hostId){
+  const host = $(hostId);
+  const renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  host.appendChild(renderer.domElement);
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0x0f1216);
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x2a3340, 2.2));
+  const key = new THREE.DirectionalLight(0xffffff, 2.3); key.position.set(2,4,3); scene.add(key);
+  const rim = new THREE.DirectionalLight(0xffd9a0, 1.1); rim.position.set(-3,2,-2); scene.add(rim);
+  const camera = new THREE.PerspectiveCamera(35, 1, 0.01, 100);
+  const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true;
+  return {host, renderer, scene, camera, controls, root:null};
+}
+let paneO=null, paneS=null, rafOn=false;
+
+function ensurePanes(){
+  if(paneO) return;
+  paneO = makePane('paneO'); paneS = makePane('paneS');
+  // lock camera: original (left) drives, squeezed (right) mirrors
+  addEventListener('resize', sizePanes);
+  (function loop(){
+    requestAnimationFrame(loop);
+    paneO.controls.update();
+    paneS.camera.position.copy(paneO.camera.position);
+    paneS.camera.quaternion.copy(paneO.camera.quaternion);
+    paneO.renderer.render(paneO.scene, paneO.camera);
+    paneS.renderer.render(paneS.scene, paneS.camera);
+  })();
+}
+function sizePanes(){
+  for(const p of [paneO,paneS]){
+    if(!p) continue;
+    const w=p.host.clientWidth, h=p.host.clientHeight;
+    p.camera.aspect = w/Math.max(1,h); p.camera.updateProjectionMatrix(); p.renderer.setSize(w,h);
+  }
+}
+function clearRoot(p){
+  if(p.root){ p.scene.remove(p.root); p.root.traverse(o=>{ o.geometry?.dispose?.();
+    if(o.material){ (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose?.()); } }); p.root=null; }
+}
+function loadInto(p, buf, tagEl){
+  return new Promise((resolve)=>{
+    clearRoot(p);
+    loader.parse(buf.slice(0), '', (gltf)=>{
+      const root = gltf.scene;
+      const box = new THREE.Box3().setFromObject(root);
+      const size = box.getSize(new THREE.Vector3()).length() || 1;
+      root.position.sub(box.getCenter(new THREE.Vector3()));
+      p.scene.add(root); p.root = root;
+      let tris=0; root.traverse(o=>{ if(o.isMesh) tris += o.geometry.index? o.geometry.index.count/3 : o.geometry.attributes.position.count/3; });
+      resolve({size, tris});
+    }, ()=>{ tagEl.textContent='preview unavailable'; resolve({size:2, tris:0}); });
+  });
+}
+
+async function select(id){
+  const it = items.find(x=>x.id===id); if(!it || !it.sqBuf) return;
+  selId = id;
+  for(const x of items) x.row.classList.toggle('sel', x.id===id);
+  $('vName').textContent = it.name + (it.preset?`  ·  ${it.preset}`:'');
+  $('vIdle').hidden = true; $('panes').hidden = false;
+  ensurePanes(); sizePanes();
+  const [o,s] = await Promise.all([
+    loadInto(paneO, it.origBuf, $('tagO')),
+    loadInto(paneS, it.sqBuf, $('tagS')),
+  ]);
+  $('tagO').textContent = `${it.stats?mb(it.stats.before.bytes):'?'} MB · ${nfmt(o.tris)} tris`;
+  $('tagS').textContent = `${it.stats?mb(it.stats.after.bytes):'?'} MB · ${nfmt(s.tris)} tris`;
+  // frame both from the original's size (they're the same model → locked cam works)
+  const dist = Math.max(o.size, s.size) * 0.85;
+  paneO.camera.position.set(0, dist*0.09, dist);
+  paneO.controls.target.set(0,0,0); paneO.controls.update();
+  sizePanes();
+}
+</script>
+</body>
+</html>

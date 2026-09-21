@@ -19,16 +19,86 @@ Per-model results ranged from **36x to 50x**, landing every file between
 
 ```bash
 npm install
-./squeeze.sh ~/models ~/models-compressed
 ```
 
-Originals are never modified — outputs are written to the target folder under
-the same filenames, plus a `_squeeze/` folder holding per-file logs and a `squeeze-report.csv`
-with before/after bytes.
+**Interactive** — drop models in the browser, preview before/after, download:
+double-click **`run-ui.command`** (macOS), or run `npm run ui` → http://localhost:4747
 
-## Tuning
+**Batch** a whole folder by role:
 
-All knobs are environment variables:
+```bash
+npm run squeeze:prop -- ~/models ~/models-out
+```
+
+Originals are never modified — outputs keep their filenames in the target folder.
+
+## Role presets — one consistent output per role
+
+The core idea, and the reason presets exist: a preset names an **absolute budget**
+for how a model is *used on screen*, not a fixed fraction of whatever it happened
+to start as. A raw ratio ("keep 15%") turns a 2 M-tri and a 300 k-tri input into
+wildly different outputs; a preset makes a folder of mixed-provenance models come
+out **consistent** — everything of one role lands at the same weight.
+
+| Preset | Target | Textures | For |
+|---|---|---|---|
+| `hero` | ≤ 80,000 tris | 2048 px | the main subject — deity, character; seen large & close |
+| `prop` | ≤ 12,000 tris | 1024 px | scene objects — lamps, bowls, tools; medium size |
+| `decor` | ≤ 6,000 tris | 1024 px | backdrops, pedestals, large low-detail pieces |
+| `particle` | ≤ 2,000 tris | 256 px | tiny things in bulk — petals, embers, confetti |
+
+> Proof: three props of **414 k / 298 k / 299 k** triangles run through `prop`
+> all come out at **~12,000** — same budget, regardless of input.
+
+How it works: each preset reads the input's triangle count and computes the
+per-file simplify ratio needed to hit its target — that derivation is what makes
+the output consistent. The simplify **error is a quality floor**: a detail-heavy
+model stops *above* the target rather than being cut to the number (a rose petal
+floors around 8 k because its UV seams won't collapse further — and that's the
+right call). Tune every budget in [`lib/presets.js`](lib/presets.js).
+
+```bash
+npm run squeeze:hero     -- ./in ./out
+npm run squeeze:prop     -- ./in ./out
+npm run squeeze:decor    -- ./in ./out
+npm run squeeze:particle -- ./in ./out
+
+# or the CLI directly, with parallelism:
+node squeeze-cli.js ./in ./out --preset prop --jobs 8
+```
+
+## Web UI
+
+**Easiest — double-click [`run-ui.command`](run-ui.command)** (macOS): it installs
+dependencies on first run, starts the server, and opens the app in your browser.
+Keep the window open while you use it; close it (or Ctrl-C) to stop.
+
+Or from a terminal (any OS):
+
+```bash
+npm run ui          # → http://localhost:4747
+```
+
+A localhost app (bound to `127.0.0.1` only). **Drop one or many `.glb` files**,
+pick a role, and each is squeezed on the spot against the same pipeline as the
+CLI. A results table shows before → after triangles and size; **Preview** opens a
+locked-camera *original vs squeezed* 3D compare (live version of `compare.html`),
+and **Download** saves the optimized file. It runs the CLI on whatever you POST,
+so never expose it beyond localhost.
+
+Use the UI to eyeball and spot-squeeze; use the CLI presets for bulk folders.
+
+## Raw ratio control (advanced)
+
+The original bash tool is still here for when you want an exact ratio rather than
+a target budget:
+
+```bash
+npm run squeeze:raw -- ./in ./out          # or ./squeeze.sh ./in ./out
+```
+
+It writes a `_squeeze/` folder of per-file logs + a `squeeze-report.csv`, and all
+its knobs are environment variables:
 
 | Var | Default | What it does |
 |---|---|---|
@@ -40,12 +110,34 @@ All knobs are environment variables:
 | `JOBS` | `4` | Files processed in parallel. |
 
 ```bash
-# Hero asset — keep more geometry
-RATIO=0.35 TEX_SIZE=4096 ./squeeze.sh ./in ./out
-
-# Background props shown small or in bulk — go hard
-RATIO=0.05 TEX_SIZE=1024 ./squeeze.sh ./in ./out
+RATIO=0.35 TEX_SIZE=4096 npm run squeeze:raw -- ./in ./out   # keep more geometry
 ```
+
+### Particles: go further than you think
+
+A single **rose petal** exported from an asset generator came in at
+**299,124 triangles** — invisible detail for something that falls past the
+screen ~40 px tall. Worse, it was rendered as an *instanced shower* (one mesh,
+dozens of copies), so that triangle count multiplied: 40 petals ≈ 12 M
+tris/frame, which dragged a mid-range phone to **6 fps**.
+
+`npm run squeeze:particle` took it to **8k tris + 256px textures + draco
+(1.28 MB → 51 KB)** and the shower back to a smooth frame rate. For a tumbling
+particle you can decimate far past what you'd dare on a hero mesh — nobody reads
+a petal's silhouette mid-fall. (The `particle` preset aims at 2 k, but this petal
+floors around 8 k: the simplifier won't collapse a mesh past its UV-seam /
+topology limit no matter the target. That floor is the quality guarantee — it's
+also why output is "as small as the mesh allows," not always exactly the target.)
+
+Two consumer-side notes once the file is tiny — both are about the *shower*, not
+the compression:
+
+- Draw the whole shower as **one `InstancedMesh`**, not N cloned meshes — a
+  single draw call instead of dozens.
+- **Force the material opaque** (`material.transparent = false`, no `alphaTest`).
+  These GLBs often ship flagged transparent; N transparent, double-sided
+  instances blending over each other is its own fps cliff, separate from the
+  triangle count.
 
 ## Checking your work
 
