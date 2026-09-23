@@ -2,23 +2,26 @@
 //
 // squeeze-cli.js — batch-squeeze a folder of models to a role preset.
 //
-//   node squeeze-cli.js <input-dir> <output-dir> --preset <hero|prop|decor|particle> [--jobs 4]
+//   node squeeze-cli.js <input-dir> <output-dir> --preset <hero|prop|decor|particle>
+//                       [--quality <high|balanced|small>] [--jobs 4]
 //
 // Unlike squeeze.sh (which keeps a fixed RATIO of every model), this targets an
 // absolute per-role budget, so a folder of mixed-provenance models comes out
-// consistent. Originals are never touched; outputs keep their filenames.
+// consistent. Each role also picks the right simplifier (standard/sloppy/snapweld
+// — see presets.js). Originals are never touched; outputs keep their filenames.
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { squeezeFile } from './lib/squeeze.js';
-import { PRESETS, PRESET_NAMES, DEFAULT_PRESET } from './lib/presets.js';
+import { PRESETS, PRESET_NAMES, DEFAULT_PRESET, QUALITY, QUALITY_NAMES, DEFAULT_QUALITY, effectivePreset } from './lib/presets.js';
 
 function parseArgs(argv) {
   const pos = [];
-  const opt = { preset: DEFAULT_PRESET, jobs: 4 };
+  const opt = { preset: DEFAULT_PRESET, quality: DEFAULT_QUALITY, jobs: 4 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--preset') opt.preset = argv[++i];
+    else if (a === '--quality') opt.quality = argv[++i];
     else if (a === '--jobs') opt.jobs = Math.max(1, parseInt(argv[++i], 10) || 4);
     else if (a.startsWith('--')) { console.error(`unknown flag: ${a}`); process.exit(1); }
     else pos.push(a);
@@ -30,14 +33,18 @@ const mb = (b) => (b / 1048576).toFixed(2);
 const n = (x) => Math.round(x).toLocaleString();
 
 async function main() {
-  const { inDir, outDir, preset, jobs } = parseArgs(process.argv.slice(2));
+  const { inDir, outDir, preset, quality, jobs } = parseArgs(process.argv.slice(2));
   if (!inDir || !outDir) {
     console.error('usage: squeeze-cli.js <input-dir> <output-dir> --preset ' +
-      `<${PRESET_NAMES.join('|')}> [--jobs 4]`);
+      `<${PRESET_NAMES.join('|')}> [--quality <${QUALITY_NAMES.join('|')}>] [--jobs 4]`);
     process.exit(1);
   }
   if (!PRESETS[preset]) {
     console.error(`unknown preset "${preset}". Options: ${PRESET_NAMES.join(', ')}`);
+    process.exit(1);
+  }
+  if (!QUALITY[quality]) {
+    console.error(`unknown quality "${quality}". Options: ${QUALITY_NAMES.join(', ')}`);
     process.exit(1);
   }
 
@@ -46,9 +53,10 @@ async function main() {
     .sort();
   if (!entries.length) { console.error(`no .glb/.gltf files in ${inDir}`); process.exit(1); }
 
-  const p = PRESETS[preset];
+  const eff = effectivePreset(preset, quality);
   console.log(`squeeze: ${entries.length} model(s) → ${outDir}`);
-  console.log(`  preset=${preset}  target=${n(p.targetTris)} tris  textures=${p.texSize}px  jobs=${jobs}\n`);
+  console.log(`  preset=${preset}  quality=${quality}  method=${eff.method}  ` +
+    `target=${n(eff.targetTris)} tris  textures=${eff.texSize}px  jobs=${jobs}\n`);
 
   const results = [];
   let idx = 0;
@@ -58,7 +66,7 @@ async function main() {
       const src = path.join(inDir, name);
       const dst = path.join(outDir, name);
       try {
-        const r = await squeezeFile(src, dst, preset);
+        const r = await squeezeFile(src, dst, preset, quality);
         results.push({ name, ok: true, ...r });
         const shrink = r.before.bytes / Math.max(1, r.after.bytes);
         console.log(`  ✓ ${name.padEnd(46)} ${n(r.before.tris)} → ${n(r.after.tris)} tris` +

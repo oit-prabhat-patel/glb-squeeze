@@ -15,7 +15,7 @@
   html,body{margin:0;min-height:100%}
   body{background:var(--bg);color:var(--text);font:13px/1.55 var(--mono);}
   a{color:var(--accent)}
-  .wrap{max-width:1180px;margin:0 auto;padding:22px 20px 60px}
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 20px 60px;display:flex;flex-direction:column}
 
   header{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:14px}
   header h1{font-size:17px;color:var(--white);margin:0;font-weight:600;letter-spacing:.02em}
@@ -36,6 +36,18 @@
   .preset .blurb{color:var(--dim);font-size:11.5px;line-height:1.45;margin-top:5px}
   .radio{width:11px;height:11px;border-radius:50%;border:1px solid var(--line-2);flex:none}
   .preset.on .radio{background:var(--after);border-color:var(--after)}
+  .preset .method{font-size:10px;letter-spacing:.05em;color:var(--accent);text-transform:uppercase}
+
+  /* quality preference — segmented control */
+  .quality-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:14px 0 2px}
+  .quality-row .q-label{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
+  .seg{display:inline-flex;border:1px solid var(--line-2);border-radius:8px;overflow:hidden}
+  .seg button{background:var(--panel);color:var(--dim);border:0;border-right:1px solid var(--line-2);
+    font:inherit;font-size:12px;padding:6px 13px;cursor:pointer;transition:background .12s,color .12s}
+  .seg button:last-child{border-right:0}
+  .seg button:hover{color:var(--white)}
+  .seg button.on{background:#19241b;color:var(--after);font-weight:600}
+  .quality-row .q-note{color:var(--dim);font-size:11.5px}
 
   /* drop zone */
   .drop{margin-top:14px;border:1.5px dashed var(--line-2);border-radius:12px;padding:30px 20px;text-align:center;
@@ -99,6 +111,12 @@
 
   <div class="presets" id="presets" role="radiogroup" aria-label="Model role preset"></div>
 
+  <div class="quality-row">
+    <span class="q-label">Quality</span>
+    <div class="seg" id="quality" role="radiogroup" aria-label="Quality preference"></div>
+    <span class="q-note" id="qNote"></span>
+  </div>
+
   <label class="drop" id="drop">
     <div class="big">Drop <b style="color:var(--white)">.glb</b> models here</div>
     <div class="small">or click to browse — drop as many as you like; each is squeezed to the selected role</div>
@@ -147,31 +165,60 @@ const $ = (id) => document.getElementById(id);
 const mb = (b) => (b/1048576).toFixed(2);
 const nfmt = (x) => Math.round(x).toLocaleString();
 
-/* ---------- preset picker ---------- */
-let PRESETS = {}, current = 'prop';
+/* ---------- preset + quality pickers ---------- */
+let PRESETS = {}, QUALITIES = {}, current = 'prop', quality = 'balanced';
 const order = ['hero','prop','decor','particle'];
+const qOrder = ['high','balanced','small'];
+const clampTex = (px)=>Math.max(128, Math.min(2048, Math.round(px)));
 try {
-  PRESETS = await (await fetch('/presets')).json();
-} catch { PRESETS = {prop:{targetTris:12000,texSize:1024,blurb:'server offline?'}}; }
+  const d = await (await fetch('/presets')).json();
+  PRESETS = d.presets || d;                 // tolerate the old flat shape
+  QUALITIES = d.qualities || {balanced:{label:'Balanced (recommended)',tris:1,tex:1,note:''}};
+  current = d.defaultPreset || 'prop';
+  quality = d.defaultQuality || 'balanced';
+} catch {
+  PRESETS = {prop:{method:'snapweld',targetTris:60000,texSize:1024,blurb:'server offline?'}};
+  QUALITIES = {balanced:{label:'Balanced (recommended)',tris:1,tex:1,note:''}};
+}
+// A role's budget after the current quality preference is applied.
+function effOf(n){
+  const p = PRESETS[n], t = QUALITIES[quality] || {tris:1,tex:1};
+  return { target: Math.round(p.targetTris*t.tris), tex: clampTex(p.texSize*t.tex), method: p.method };
+}
 function renderPresets(){
   const host = $('presets'); host.innerHTML = '';
   const names = order.filter(n=>PRESETS[n]).concat(Object.keys(PRESETS).filter(n=>!order.includes(n)));
   if(!PRESETS[current]) current = names[0];
   for(const n of names){
-    const p = PRESETS[n];
+    const p = PRESETS[n], e = effOf(n);
     const el = document.createElement('div');
     el.className = 'preset' + (n===current?' on':'');
     el.setAttribute('role','radio'); el.setAttribute('aria-checked', n===current);
     el.tabIndex = 0;
     el.innerHTML = `<div class="name">${n}<span class="radio"></span></div>
-      <div class="budget">&le; ${nfmt(p.targetTris)} tris · ${p.texSize}px</div>
+      <div class="budget">&le; ${nfmt(e.target)} tris · ${e.tex}px · <span class="method">${e.method||''}</span></div>
       <div class="blurb">${p.blurb||''}</div>`;
     const pick = ()=>{ current = n; renderPresets(); };
     el.addEventListener('click', pick);
-    el.addEventListener('keydown', (e)=>{ if(e.key===' '||e.key==='Enter'){ e.preventDefault(); pick(); }});
+    el.addEventListener('keydown', (ev)=>{ if(ev.key===' '||ev.key==='Enter'){ ev.preventDefault(); pick(); }});
     host.appendChild(el);
   }
 }
+function renderQuality(){
+  const host = $('quality'); host.innerHTML = '';
+  const names = qOrder.filter(q=>QUALITIES[q]).concat(Object.keys(QUALITIES).filter(q=>!qOrder.includes(q)));
+  if(!QUALITIES[quality]) quality = names.includes('balanced') ? 'balanced' : names[0];
+  for(const q of names){
+    const b = document.createElement('button');
+    b.className = q===quality ? 'on' : '';
+    b.setAttribute('role','radio'); b.setAttribute('aria-checked', q===quality);
+    b.textContent = QUALITIES[q].label || q;
+    b.addEventListener('click', ()=>{ quality = q; renderQuality(); renderPresets(); });
+    host.appendChild(b);
+  }
+  $('qNote').textContent = QUALITIES[quality]?.note || '';
+}
+renderQuality();
 renderPresets();
 
 /* ---------- squeeze queue ---------- */
@@ -195,7 +242,7 @@ async function runOne(it){
   setStatus(it,'work','squeezing');
   try{
     it.origBuf = await it.file.arrayBuffer();
-    const res = await fetch(`/squeeze?preset=${encodeURIComponent(current)}&name=${encodeURIComponent(it.name)}`,
+    const res = await fetch(`/squeeze?preset=${encodeURIComponent(current)}&quality=${encodeURIComponent(quality)}&name=${encodeURIComponent(it.name)}`,
       {method:'POST', headers:{'content-type':'application/octet-stream'}, body:it.origBuf});
     if(!res.ok) throw new Error(await res.text());
     it.sqBuf = await res.arrayBuffer();
@@ -322,7 +369,8 @@ async function select(id){
   const it = items.find(x=>x.id===id); if(!it || !it.sqBuf) return;
   selId = id;
   for(const x of items) x.row.classList.toggle('sel', x.id===id);
-  $('vName').textContent = it.name + (it.preset?`  ·  ${it.preset}`:'');
+  const meta = it.stats ? [it.stats.preset, it.stats.quality, it.stats.method].filter(Boolean).join(' · ') : '';
+  $('vName').textContent = it.name + (meta ? `  ·  ${meta}` : '');
   $('vIdle').hidden = true; $('panes').hidden = false;
   ensurePanes(); sizePanes();
   const [o,s] = await Promise.all([

@@ -5,15 +5,18 @@ wrapper around [glTF-Transform](https://gltf-transform.dev/) that turns a folder
 of 60 MB "download from an asset generator" models into ~1.4 MB files you can
 actually ship over a mobile connection.
 
-Typical result on generated (photogrammetry/AI) murti and prop models:
+Typical result on generated (photogrammetry/AI) murti and prop models — a raw
+~2 M-triangle, ~60 MB export comes down to a small, consistent file per role:
 
 ```
-29 models
-1657 MB → 40 MB   (41.6x smaller, 97.6% saved)
+particle (petal)   2.0 M tris, 60 MB  →   ~8 k tris,  ~90 KB   (balanced)
+prop (incense)      2.0 M tris, 58 MB  →  ~24 k tris, ~330 KB   (balanced)
+hero (deity murti)  1.9 M tris, 61 MB  →  ~120 k tris, ~0.9 MB  (balanced)
 ```
 
-Per-model results ranged from **36x to 50x**, landing every file between
-1.2 MB and 1.7 MB regardless of what it started at.
+Roughly **50–700× smaller** depending on role, and — because presets target an
+absolute budget, not a fixed ratio — every model of one role lands at the same
+weight no matter what it started at. `--quality small` goes smaller still.
 
 ## Quick start
 
@@ -38,24 +41,56 @@ The core idea, and the reason presets exist: a preset names an **absolute budget
 for how a model is *used on screen*, not a fixed fraction of whatever it happened
 to start as. A raw ratio ("keep 15%") turns a 2 M-tri and a 300 k-tri input into
 wildly different outputs; a preset makes a folder of mixed-provenance models come
-out **consistent** — everything of one role lands at the same weight.
+out **consistent** — everything of one role lands at the same weight. Each preset
+also picks the **right simplifier for that role** (see below).
 
-| Preset | Target | Textures | For |
+| Preset | Method | Target | Textures | For |
+|---|---|---|---|---|
+| `hero` | standard | ≤ 120,000 tris | 2048 px | the main subject — deity, character; seen large & close |
+| `prop` | snap-weld | ≤ 60,000 tris | 1024 px | scene objects — lamps, bowls, incense, tools; medium size |
+| `decor` | snap-weld | ≤ 20,000 tris | 1024 px | backdrops, pedestals, large low-detail pieces |
+| `particle` | snap-weld | ≤ 8,000 tris | 384 px | tiny things in bulk — petals, embers, confetti |
+
+These are the **balanced (recommended)** budgets, validated on a real scene
+(deity murti + diyas + aarti + incense + a 40-instance petal shower: ~12 M
+tris/frame → ~700 k). Pick a lighter or heavier point with `--quality` (below).
+
+### Three simplifiers, chosen per role — the one hard-won lesson
+
+Asset-generator and scan meshes are **thousands of disconnected islands** (surface
+patches whose seams don't share vertices). That single fact makes the three
+simplifiers behave completely differently, and picking the wrong one is what
+"destroys" a model:
+
+- **standard** (meshopt, topology-preserving) — protects the silhouette, UVs and
+  the face; best quality. But it can't collapse across island seams, so it
+  **floors far above target** (a 2 M-tri hero stops ~120 k). Right for a **hero**:
+  the floor *is* the quality guarantee.
+- **sloppy** (meshopt, topology-ignoring) — reaches any target, but on a **thin
+  sheet** (a petal) or thin sticks (incense) it fuses the front and back surfaces
+  into gravel — total destruction — at *every* target. Only safe on chunky,
+  volumetric bulk. (Kept as a `method` you can set in a preset; no preset uses it
+  by default.)
+- **snap-weld** (this tool's fix, the default for everything that isn't a hero) —
+  quantize positions onto a grid so seam vertices weld, reconnecting the islands,
+  *then* run the topology-preserving simplifier along the joined surface. Reaches
+  aggressive targets **without gravelling thin geometry**. The cost is faint
+  position *terracing* that grows with the grid — invisible when small or in bulk,
+  visible on a big smooth face (so never for a hero). It auto-escalates the grid
+  until the target is in reach; see [`lib/snapweld.js`](lib/snapweld.js).
+
+Set the method + budget per role in [`lib/presets.js`](lib/presets.js).
+
+### Quality preference
+
+A global preference scales every role's triangle budget and texture size, so you
+can trade size for fidelity without touching the presets:
+
+| `--quality` | Triangles | Textures | When |
 |---|---|---|---|
-| `hero` | ≤ 80,000 tris | 2048 px | the main subject — deity, character; seen large & close |
-| `prop` | ≤ 12,000 tris | 1024 px | scene objects — lamps, bowls, tools; medium size |
-| `decor` | ≤ 6,000 tris | 1024 px | backdrops, pedestals, large low-detail pieces |
-| `particle` | ≤ 2,000 tris | 256 px | tiny things in bulk — petals, embers, confetti |
-
-> Proof: three props of **414 k / 298 k / 299 k** triangles run through `prop`
-> all come out at **~12,000** — same budget, regardless of input.
-
-How it works: each preset reads the input's triangle count and computes the
-per-file simplify ratio needed to hit its target — that derivation is what makes
-the output consistent. The simplify **error is a quality floor**: a detail-heavy
-model stops *above* the target rather than being cut to the number (a rose petal
-floors around 8 k because its UV seams won't collapse further — and that's the
-right call). Tune every budget in [`lib/presets.js`](lib/presets.js).
+| `high` | 2× the budget | 2× (capped 2048) | closest to source; keep more |
+| `balanced` *(default, recommended)* | the tuned budget | as listed | light and clean |
+| `small` | ½ the budget | ½ | smallest download / VRAM; accept a little more loss |
 
 ```bash
 npm run squeeze:hero     -- ./in ./out
@@ -63,8 +98,9 @@ npm run squeeze:prop     -- ./in ./out
 npm run squeeze:decor    -- ./in ./out
 npm run squeeze:particle -- ./in ./out
 
-# or the CLI directly, with parallelism:
-node squeeze-cli.js ./in ./out --preset prop --jobs 8
+# with a quality preference, or the CLI directly with parallelism:
+node squeeze-cli.js ./in ./out --preset prop --quality balanced --jobs 8
+node squeeze-cli.js ./in ./out --preset particle --quality small
 ```
 
 ## Web UI
@@ -80,11 +116,12 @@ npm run ui          # → http://localhost:4747
 ```
 
 A localhost app (bound to `127.0.0.1` only). **Drop one or many `.glb` files**,
-pick a role, and each is squeezed on the spot against the same pipeline as the
-CLI. A results table shows before → after triangles and size; **Preview** opens a
-locked-camera *original vs squeezed* 3D compare (live version of `compare.html`),
-and **Download** saves the optimized file. It runs the CLI on whatever you POST,
-so never expose it beyond localhost.
+pick a **role** (each card shows the method + budget it will use) and a **quality
+preference** (High / Balanced-recommended / Smaller), and each is squeezed on the
+spot against the same pipeline as the CLI. A results table shows before → after
+triangles and size; **Preview** opens a locked-camera *original vs squeezed* 3D
+compare (live version of `compare.html`), and **Download** saves the optimized
+file. It runs the CLI on whatever you POST, so never expose it beyond localhost.
 
 Use the UI to eyeball and spot-squeeze; use the CLI presets for bulk folders.
 
@@ -121,13 +158,20 @@ screen ~40 px tall. Worse, it was rendered as an *instanced shower* (one mesh,
 dozens of copies), so that triangle count multiplied: 40 petals ≈ 12 M
 tris/frame, which dragged a mid-range phone to **6 fps**.
 
-`npm run squeeze:particle` took it to **8k tris + 256px textures + draco
-(1.28 MB → 51 KB)** and the shower back to a smooth frame rate. For a tumbling
-particle you can decimate far past what you'd dare on a hero mesh — nobody reads
-a petal's silhouette mid-fall. (The `particle` preset aims at 2 k, but this petal
-floors around 8 k: the simplifier won't collapse a mesh past its UV-seam /
-topology limit no matter the target. That floor is the quality guarantee — it's
-also why output is "as small as the mesh allows," not always exactly the target.)
+`npm run squeeze:particle` takes the raw petal (**~2 M triangles, 60 MB**) down to
+**~8 k tris + 384px textures + draco (≈ 90 KB)** — and every other flower in the
+folder to the same budget — so the shower runs smooth. For a tumbling particle you
+can decimate far past what you'd dare on a hero mesh; nobody reads a petal's
+silhouette mid-fall.
+
+But **not with the sloppy simplifier** — a petal is a thin sheet, and sloppy fuses
+its two surfaces into gravel at *every* target (we tried 18 k, 7 k, 2 k — all
+rubble). The topology-preserving simplifier keeps it smooth but floors at ~287 k
+(disconnected islands). `particle` therefore uses **snap-weld** (see the
+three-simplifiers note above): it reconnects the islands so the petal stays a clean
+curved petal down to ~8 k. Faint terracing appears at aggressive grids but is
+invisible on something 40 px tall and falling. Push it further with
+`--quality small` (~4–5 k + 192px).
 
 Two consumer-side notes once the file is tiny — both are about the *shower*, not
 the compression:

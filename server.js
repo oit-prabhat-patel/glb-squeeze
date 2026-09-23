@@ -17,7 +17,7 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { squeezeFile, glbStats } from './lib/squeeze.js';
-import { PRESETS, PRESET_NAMES } from './lib/presets.js';
+import { PRESETS, PRESET_NAMES, QUALITY, QUALITY_NAMES, DEFAULT_PRESET, DEFAULT_QUALITY } from './lib/presets.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.join(HERE, 'web');
@@ -55,9 +55,11 @@ async function serveStatic(res, urlPath) {
 }
 
 async function handleSqueeze(req, res, url) {
-  const preset = url.searchParams.get('preset') || 'prop';
+  const preset = url.searchParams.get('preset') || DEFAULT_PRESET;
+  const quality = url.searchParams.get('quality') || DEFAULT_QUALITY;
   const name = (url.searchParams.get('name') || 'model.glb').replace(/[^\w.\-]/g, '_');
   if (!PRESETS[preset]) { res.writeHead(400).end('unknown preset'); return; }
+  if (!QUALITY[quality]) { res.writeHead(400).end('unknown quality'); return; }
 
   let body;
   try { body = await readBody(req, MAX_UPLOAD); }
@@ -67,7 +69,7 @@ async function handleSqueeze(req, res, url) {
   const inFile = tmp + '-in.glb', outFile = tmp + '-out.glb';
   try {
     await fs.writeFile(inFile, body);
-    const r = await squeezeFile(inFile, outFile, preset);
+    const r = await squeezeFile(inFile, outFile, preset, quality);
     const outBuf = await fs.readFile(outFile);
     res.writeHead(200, {
       'content-type': 'model/gltf-binary',
@@ -89,10 +91,15 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   if (req.method === 'POST' && url.pathname === '/squeeze') return handleSqueeze(req, res, url);
   if (req.method === 'GET' && url.pathname === '/presets') {
-    const out = {};
-    for (const k of PRESET_NAMES) out[k] = PRESETS[k];
+    const presets = {};
+    for (const k of PRESET_NAMES) presets[k] = PRESETS[k];
+    const qualities = {};
+    for (const k of QUALITY_NAMES) qualities[k] = QUALITY[k];
     res.writeHead(200, { 'content-type': 'application/json' });
-    return res.end(JSON.stringify(out));
+    return res.end(JSON.stringify({
+      presets, qualities,
+      defaultPreset: DEFAULT_PRESET, defaultQuality: DEFAULT_QUALITY,
+    }));
   }
   if (req.method === 'GET') return serveStatic(res, url.pathname);
   res.writeHead(405).end('method not allowed');
